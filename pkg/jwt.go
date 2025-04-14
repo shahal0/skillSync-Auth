@@ -2,6 +2,7 @@ package pkg
 
 import (
 	"errors"
+	"log"
 	"strings"
 	"time"
 
@@ -36,22 +37,28 @@ func (j *JWTMaker) GenerateToken(userID, role string) (string, error) {
 			IssuedAt:  time.Now().Unix(),
 		},
 	}
+
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signedToken, err := token.SignedString([]byte(j.secretKey)) // Ensure this secretKey is correct
+	signedToken, err := token.SignedString([]byte(j.secretKey))
 	if err != nil {
 		return "", err
 	}
 
+	log.Println("Generated Token:", signedToken)
 	return signedToken, nil
 }
 
 // ValidateToken parses and validates a JWT token
 func (j *JWTMaker) ValidateToken(tokenStr string) (*CustomClaims, error) {
+	log.Println("Validating Token:", tokenStr)
+	log.Println("Secret Key Used:", j.secretKey)
+
 	token, err := jwt.ParseWithClaims(tokenStr, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return []byte(j.secretKey), nil // Ensure this secretKey matches the one used for signing
+		return []byte(j.secretKey), nil
 	})
 
 	if err != nil {
+		log.Println("Token Validation Error:", err)
 		return nil, err
 	}
 
@@ -60,15 +67,24 @@ func (j *JWTMaker) ValidateToken(tokenStr string) (*CustomClaims, error) {
 		return nil, errors.New("invalid token")
 	}
 
+	log.Println("Token Claims:", claims)
 	return claims, nil
 }
 
 // ExtractUserIDFromToken extracts the user ID from a JWT token
-func (j *JWTMaker) ExtractUserIDFromToken(tokenString string) (string, error) {
-	claims, err := j.ValidateToken(tokenString)
+func (j *JWTMaker) ExtractUserIDFromToken(tokenStr string) (string, error) {
+	log.Println("Extracting User ID from Token:", tokenStr)
+
+	claims := &CustomClaims{}
+	_, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+		return []byte(j.secretKey), nil
+	})
 	if err != nil {
-		return "", err
+		log.Println("Token Parsing Error:", err)
+		return "", errors.New("invalid token")
 	}
+
+	log.Println("Extracted Claims:", claims)
 	return claims.UserID, nil
 }
 

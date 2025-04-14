@@ -2,13 +2,16 @@ package handlers
 
 import (
 	//"go/token"
+	"encoding/json"
 	"log"
 	"net/http"
+	"skillsync-authservice/config"
 	model "skillsync-authservice/domain/models"
 	"skillsync-authservice/internal/usecase"
 	"skillsync-authservice/pkg"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/oauth2"
 )
 
 type CandidateHandler struct {
@@ -32,6 +35,9 @@ func NewCandidateHandler(router *gin.RouterGroup, uc *usecase.CandidateUsecase) 
 		candidate.POST("/forgot-password", handler.ForgotPassword)
 		candidate.PUT("/reset-password", handler.ResetPassword)
 		candidate.PATCH("/change-password", handler.ChangePassword)
+		candidate.GET("/auth/google/login", GoogleLogin)
+		candidate.GET("/auth/google/callback", GoogleCallback)
+
 	}
 }
 
@@ -290,4 +296,72 @@ func (h *CandidateHandler) ChangePassword(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Password changed successfully"})
+}
+
+func GoogleCallback(c *gin.Context) {
+	state := c.Query("state")
+	if state == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "State parameter is missing"})
+		return
+	}
+
+	// Retrieve the stored state token (example: from Gin's context or session)
+	storedState, exists := c.Get("state")
+	if !exists || state != storedState {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid state token"})
+		return
+	}
+
+	// Get the authorization code from the query parameters
+	code := c.Query("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Authorization code not provided"})
+		return
+	}
+
+	// Exchange the authorization code for an access token
+	token, err := config.GoogleOAuthConfig.Exchange(c, code)
+	if err != nil {
+		log.Println("Failed to exchange token:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange token: " + err.Error()})
+		return
+	}
+	log.Println("Access Token:", token.AccessToken)
+
+	// Use the access token to get the user's information
+	client := config.GoogleOAuthConfig.Client(c, token)
+	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+	if err != nil {
+		log.Println("Failed to get user info:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user info: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	// Parse the user's information
+	var userInfo struct {
+		Email string `json:"email"`
+		Name  string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+		log.Println("Failed to parse user info:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse user info: " + err.Error()})
+		return
+	}
+	log.Println("User Info:", userInfo)
+
+	// Handle user login or registration
+	c.JSON(http.StatusOK, gin.H{
+		"email": userInfo.Email,
+		"name":  userInfo.Name,
+	})
+}
+
+func GoogleLogin(c *gin.Context) {
+	log.Println("Google Client ID:", config.GoogleOAuthConfig.ClientID)
+	log.Println("Google Redirect URL:", config.GoogleOAuthConfig.RedirectURL)
+	state := pkg.GenerateStateToken()
+	url := config.GoogleOAuthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	log.Println("Generated Google OAuth URL:", url)
+	c.Redirect(http.StatusTemporaryRedirect, url)
 }

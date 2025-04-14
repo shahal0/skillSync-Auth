@@ -28,6 +28,7 @@ func NewEmployerHandler(router *gin.RouterGroup, uc *usecase.EmployerUsecase) {
 		employer.POST("/resend-otp", handler.ResendOtp)
 		employer.POST("/forgot-password", handler.ForgotPassword) // Forgot Password route
 		employer.POST("/reset-password", handler.ResetPassword)   // Reset Password route
+		employer.PATCH("/change-password", handler.ChangePassword)
 	}
 }
 
@@ -205,4 +206,44 @@ func (h *EmployerHandler) ResetPassword(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Password reset successfully"})
+}
+func (h *EmployerHandler) ChangePassword(c *gin.Context) {
+	// Extract the token from the Authorization header
+	authHeader := c.Request.Header.Get("Authorization")
+	log.Println("Authorization Header:", authHeader)
+
+	token, err := pkg.ExtractTokenFromHeader(authHeader)
+	if err != nil {
+		log.Println("Token Extraction Error:", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: " + err.Error()})
+		return
+	}
+
+	// Extract user ID from the token
+	userID, err := h.usecase.ExtractUserIDFromToken(token)
+	if err != nil {
+		log.Println("User ID Extraction Error:", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		return
+	}
+
+	// Parse the request body
+	var req struct {
+		CurrentPassword string `json:"current_password" binding:"required"`
+		NewPassword     string `json:"new_password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input: " + err.Error()})
+		return
+	}
+
+	// Call the usecase to change the password
+	log.Print("userid",userID)
+	err = h.usecase.ChangePassword(c.Request.Context(), userID, req.CurrentPassword, req.NewPassword)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Failed to change password: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Password changed successfully"})
 }

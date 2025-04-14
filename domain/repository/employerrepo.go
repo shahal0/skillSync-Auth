@@ -14,4 +14,5 @@ type EmployerRepository interface {
 	SendPasswordResetOtp(email string) error
 	VerifyPasswordResetOtp(email string, otp uint64) error
 	UpdatePassword(email string, newPassword string) error
+	UpdatePasswordByID(id string, newPassword string) error
 }

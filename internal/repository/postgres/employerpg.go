@@ -2,7 +2,7 @@ package postgres
 
 import (
 	//"go/token"
-
+	"log"
 	"math/rand"
 	"os"
 	model "skillsync-authservice/domain/models"
@@ -49,7 +49,6 @@ func (e *employerPG) UpdateEmployer(input *model.UpdateEmployerInput) error {
 }
 
 func (e *employerPG) GetEmployerByUserID(userID string) (*model.Employer, error) {
-
 	var emp model.Employer
 	if err := e.db.Where("id= ?", userID).First(&emp).Error; err != nil {
 		return nil, err
@@ -57,27 +56,43 @@ func (e *employerPG) GetEmployerByUserID(userID string) (*model.Employer, error)
 	return &emp, nil
 }
 func (r *employerPG) GetEmployerByEmail(email string) (*model.Employer, error) {
-	query := `SELECT id, company_name, email, password, company_name FROM employers WHERE email = $1`
-
-	var emp model.Employer
-	err := r.db.Raw(query, email).Scan(&emp).Error
-	if err != nil {
-		return nil, errors.New("employer not found")
+	var employer model.Employer
+	err := r.db.Where("email = ?", email).First(&employer).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil // Return nil if no record is found
 	}
-
-	return &emp, nil
+	if err != nil {
+		return nil, err // Return the error if it's not a "record not found" error
+	}
+	return &employer, nil
 }
 
 func (r *employerPG) Login(request model.LoginRequest) (*model.LoginResponse, error) {
 	var emp model.Employer
-	if err := r.db.Where("email = ? AND password = ?", request.Email, request.Password).First(&emp).Error; err != nil {
+
+	// Check if the email exists in the database
+	if err := r.db.Where("email = ?", request.Email).First(&emp).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("email not found")
+		}
+		return nil, err
+	}
+
+	// Verify the password
+	passwordManager := pkg.NewPasswordManager()
+	if err := passwordManager.CheckPassword(request.Password, emp.Password); err != nil {
+		log.Print("passwords :", emp.Password, request.Password)
 		return nil, errors.New("invalid email or password")
 	}
+
+	// Generate a token
 	id := strconv.Itoa(emp.ID)
 	token, err := r.jwtMaker.GenerateToken(id, "employer")
 	if err != nil {
 		return nil, err
 	}
+
+	// Create the response
 	response := &model.LoginResponse{
 		ID:    id,
 		Role:  "employer",
@@ -85,13 +100,19 @@ func (r *employerPG) Login(request model.LoginRequest) (*model.LoginResponse, er
 	}
 	return response, nil
 }
+
 func (e *employerPG) Signup(request model.SignupRequest) (*model.AuthResponse, error) {
 	profile := &model.Employer{
 		CompanyName: request.Name,
 		Email:       request.Email,
 		Password:    request.Password,
 	}
+
 	if err := e.db.Create(profile).Error; err != nil {
+		return nil, err
+	}
+	err := pkg.SendOtp(e.db, request.Email, 5)
+	if err != nil {
 		return nil, err
 	}
 	response := &model.AuthResponse{

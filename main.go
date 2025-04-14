@@ -19,7 +19,7 @@ import (
 func main() {
 	// Initialize the database connection
 	// Initialize the configuration
-	cfg,err := config.LoadConfig()
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
@@ -43,16 +43,20 @@ func main() {
 
 	// Initialize the employer repository and usecase
 	employerRepo := repository.NewEmployerRepository(db)
-	jwtMaker := pkg.NewJWTMaker("your-secret-key")
+	jwtMaker := pkg.NewJWTMaker("your_jwt_secret")
+	token, err := jwtMaker.GenerateToken("3", "employer")
+	if err != nil {
+		log.Println("Error generating token:", err)
+	}
+	log.Println("Generated Token:", token)
 	employerUsecase := usecase.NewEmployerUsecase(employerRepo, jwtMaker, db)
 
 	// Initialize the employer handler and routes
 	router := gin.Default()
 	handler.NewEmployerHandler(router.Group(""), employerUsecase)
-	candidaterepo:= repository.NewCandidateRepository(db, jwtMaker)
+	candidaterepo := repository.NewCandidateRepository(db, jwtMaker)
 	candidateUsecase := usecase.NewCandidateUsecase(candidaterepo, jwtMaker, db)
 	handler.NewCandidateHandler(router.Group(""), candidateUsecase)
-
 
 	// Start the server
 	router.Run(":8060")

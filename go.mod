@@ -13,7 +13,11 @@ require (
 	gorm.io/gorm v1.25.12
 )
 
-require github.com/mattn/go-sqlite3 v1.14.22 // indirect
+require (
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
+	github.com/mattn/go-sqlite3 v1.14.22 // indirect
+	golang.org/x/oauth2 v0.29.0 // indirect
+)
 
 require (
 	github.com/bytedance/sonic v1.11.6 // indirect

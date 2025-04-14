@@ -6,18 +6,46 @@ import (
 	"log"
 	"os"
 	"time"
-	"gorm.io/gorm"
-	"gorm.io/driver/sqlite"
-	"github.com/joho/godotenv"
+
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
+
+var GoogleOAuthConfig *oauth2.Config
+
+func init() {
+	// Load environment variables
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("No .env file found, loading from system environment variables")
+	} else {
+		log.Println(".env file loaded successfully")
+	}
+
+	// Log environment variables for debugging
+	log.Println("GOOGLE_CLIENT_ID:", os.Getenv("GOOGLE_CLIENT_ID"))
+	log.Println("GOOGLE_CLIENT_SECRET:", os.Getenv("GOOGLE_CLIENT_SECRET"))
+	log.Println("GOOGLE_REDIRECT_URI:", os.Getenv("GOOGLE_REDIRECT_URI"))
+
+	// Initialize GoogleOAuthConfig after loading environment variables
+	GoogleOAuthConfig = &oauth2.Config{
+		ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		RedirectURL:  os.Getenv("GOOGLE_REDIRECT_URI"),
+		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"},
+		Endpoint:     google.Endpoint,
+	}
+}
 
 type Config struct {
 	Port      string
 	DB        *pgxpool.Pool
 	JWTSecret string
 }
-
 
 func InitializeDB() (*gorm.DB, error) {
 	// Replace with your actual database configuration
@@ -27,6 +55,7 @@ func InitializeDB() (*gorm.DB, error) {
 	}
 	return db, nil
 }
+
 // LoadConfig loads environment variables and connects to PostgreSQL
 func LoadConfig() (*Config, error) {
 	// Load from .env file if available

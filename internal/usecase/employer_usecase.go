@@ -41,6 +41,20 @@ func (uc *EmployerUsecase) GetProfile(ctx context.Context, token string) (*model
 }
 
 func (uc *EmployerUsecase) Signup(ctx context.Context, req model.SignupRequest) (*model.AuthResponse, error) {
+	// Check if the email already exists
+	existingEmployer, err := uc.employerRepo.GetEmployerByEmail(req.Email)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if existingEmployer != nil {
+		return nil, errors.New("email already exists")
+	}
+	hashedPassword, err := pkg.NewPasswordManager().HashPassword(req.Password)
+	if err != nil {
+		return nil, errors.New("failed to hash password")
+	}
+	req.Password = hashedPassword
+
 	// Create the employer record
 	employer := &model.Employer{
 		Email:       req.Email,
@@ -48,12 +62,6 @@ func (uc *EmployerUsecase) Signup(ctx context.Context, req model.SignupRequest) 
 		CompanyName: req.Name,
 	}
 	id, err := uc.employerRepo.CreateEmployer(employer)
-	if err != nil {
-		return nil, err
-	}
-
-	// Generate and send OTP
-	err = pkg.SendOtp(uc.db, req.Email, 5)
 	if err != nil {
 		return nil, err
 	}
@@ -83,16 +91,8 @@ func (uc *EmployerUsecase) ForgotPassword(ctx context.Context, email string) err
 
 func (uc *EmployerUsecase) ResetPassword(ctx context.Context, email string, otp uint64, newPassword string) error {
 	// Verify OTP
-	// Check if the email exists in the database
-	existingEmployer, err := uc.employerRepo.GetEmployerByEmail(email)
+	err := uc.employerRepo.VerifyPasswordResetOtp(email, otp)
 	if err != nil {
-		return errors.New("email not found or not registered")
-	}
-	if existingEmployer == nil {
-		return errors.New("email not found or not registered")
-	}
-	errr:= uc.employerRepo.VerifyPasswordResetOtp(email, otp)
-	if errr != nil {
 		return err
 	}
 
@@ -104,4 +104,29 @@ func (uc *EmployerUsecase) ResetPassword(ctx context.Context, email string, otp 
 
 	// Update the password in the database
 	return uc.employerRepo.UpdatePassword(email, hashedPassword)
+}
+
+func (uc *EmployerUsecase) ExtractUserIDFromToken(token string) (string, error) {
+	return uc.jwtcliams.ExtractUserIDFromToken(token)
+}
+func (uc *EmployerUsecase) ChangePassword(ctx context.Context, userID string, currentPassword string, newPassword string) error {
+	employer, err := uc.employerRepo.GetEmployerByUserID(userID)
+	if err != nil {
+		return errors.New("user not found")
+	}
+
+	// Verify the current password
+	passwordManager := pkg.NewPasswordManager()
+	if err := passwordManager.CheckPassword(currentPassword, employer.Password); err != nil {
+		return errors.New("current password is incorrect")
+	}
+
+	// Hash the new password
+	hashedPassword, err := passwordManager.HashPassword(newPassword)
+	if err != nil {
+		return errors.New("failed to hash new password")
+	}
+
+	// Update the password in the database
+	return uc.employerRepo.UpdatePasswordByID(userID, hashedPassword)
 }

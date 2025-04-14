@@ -1,7 +1,9 @@
 package pkg
 
 import (
+	"encoding/base64"
 	"errors"
+	"log"
 	"math/rand"
 	"net/smtp"
 	models "skillsync-authservice/domain/models"
@@ -69,4 +71,13 @@ func SendOtp(db *gorm.DB, to string, otpexpiry uint64) error {
 	}
 
 	return nil
+}
+func GenerateStateToken() string {
+    b := make([]byte, 16) // 16 bytes = 128 bits
+    _, err := rand.Read(b)
+    if err != nil {
+        log.Println("Error generating state token:", err)
+        return ""
+    }
+    return base64.URLEncoding.EncodeToString(b)
 }
