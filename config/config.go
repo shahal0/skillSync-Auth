@@ -6,7 +6,8 @@ import (
 	"log"
 	"os"
 	"time"
-
+	"gorm.io/gorm"
+	"gorm.io/driver/sqlite"
 	"github.com/joho/godotenv"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -17,6 +18,15 @@ type Config struct {
 	JWTSecret string
 }
 
+
+func InitializeDB() (*gorm.DB, error) {
+	// Replace with your actual database configuration
+	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
 // LoadConfig loads environment variables and connects to PostgreSQL
 func LoadConfig() (*Config, error) {
 	// Load from .env file if available

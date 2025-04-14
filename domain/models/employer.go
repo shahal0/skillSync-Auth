@@ -1,15 +1,16 @@
 package domain
 
 type Employer struct {
-    ID          int    `gorm:"primaryKey;autoIncrement"` // Auto-incrementing integer
-    Email       string
-    Password    string
-    CompanyName string
-    Phone       int64
-    Industry    string
-    Location    string
-    Website     string
-    IsTrusted   bool
+	ID          int `gorm:"primaryKey;autoIncrement"` // Auto-incrementing integer
+	Email       string
+	Password    string
+	CompanyName string
+	Phone       int64
+	Industry    string
+	Location    string
+	Website     string
+	IsVerified  bool `gorm:"default:false "`
+	IsTrusted   bool
 }
 
 type UpdateEmployerInput struct {

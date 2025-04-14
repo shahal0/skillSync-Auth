@@ -4,11 +4,11 @@ import (
 	"log"
 
 	"skillsync-authservice/config"
-	http "skillsync-authservice/internal/delivery/handler"
-	postgress "skillsync-authservice/internal/repository/postgres"
+	models "skillsync-authservice/domain/models"
+	handler "skillsync-authservice/internal/delivery/handler"
+	repository "skillsync-authservice/internal/repository/postgres"
 	"skillsync-authservice/internal/usecase"
 	"skillsync-authservice/pkg"
-	models "skillsync-authservice/domain/models"
 
 	"gorm.io/driver/postgres" // PostgreSQL driver for GORM
 	"gorm.io/gorm"
@@ -17,46 +17,43 @@ import (
 )
 
 func main() {
-	// Load config and establish DB connection
-	cfg, err := config.LoadConfig()
+	// Initialize the database connection
+	// Initialize the configuration
+	cfg,err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
-	defer cfg.DB.Close()
-
-	gormDB, err := gorm.Open(postgres.Open(cfg.DB.Config().ConnString()), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(cfg.DB.Config().ConnString()), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("Failed to initialize GORM DB: %v", err)
+		log.Fatalf("Failed to connect to the database: %v", err)
 	}
-	err = gormDB.AutoMigrate(
+
+	// Run migrations
+	err = db.AutoMigrate(
 		&models.Employer{},
 		&models.Candidate{},
 		&models.User{},
 		&models.Skills{},
 		&models.Education{},
+		&models.VerificationTable{},
 	)
-	employerRepo := postgress.NewEmployerRepository(gormDB)
-	candidateRepo := postgress.NewCandidateRepository(gormDB,&pkg.JWTMaker{})
+	if err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
+	}
 
-	// Initialize use cases
-	employerUC := usecase.NewEmployerUsecase(employerRepo)
-	candidateUC := usecase.NewCandidateUsecase(candidateRepo)
+	// Initialize the employer repository and usecase
+	employerRepo := repository.NewEmployerRepository(db)
+	jwtMaker := pkg.NewJWTMaker("your-secret-key")
+	employerUsecase := usecase.NewEmployerUsecase(employerRepo, jwtMaker, db)
 
-	// Setup Gin router
+	// Initialize the employer handler and routes
 	router := gin.Default()
-	api := router.Group("")
+	handler.NewEmployerHandler(router.Group(""), employerUsecase)
+	candidaterepo:= repository.NewCandidateRepository(db, jwtMaker)
+	candidateUsecase := usecase.NewCandidateUsecase(candidaterepo, jwtMaker, db)
+	handler.NewCandidateHandler(router.Group(""), candidateUsecase)
 
-	// Register handlers
-	http.NewEmployerHandler(api, employerUC)
-	http.NewCandidateHandler(api, candidateUC)
 
-	// Start server
-	port := cfg.Port
-	if port == "" {
-		port = "8060"
-	}
-	log.Printf("Server is running on port %s", port)
-	if err := router.Run(":" + port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-	}
+	// Start the server
+	router.Run(":8060")
 }

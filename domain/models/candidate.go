@@ -1,5 +1,6 @@
 package domain
 
+
 type Candidate struct {
     ID                string        `gorm:"primaryKey;default:gen_random_uuid()"` // Auto-generate UUID
     Email             string        `json:"email"`
@@ -37,9 +38,12 @@ type UpdateCandidateInput struct {
 	Email string `json:"email"`
 	Phone int64  `json:"phone"`
 	Experience int64  `json:"experience"`
-	Skills []Skills `json:"skills"`
+	Skills []Skills `gorm:"foreignKey:CandidateID" json:"skills"`
 	Resume string `json:"resume"`
-	Education []Education `json:"education"`
+	Education []Education `gorm:"foreignKey:CandidateID" json:"education"`
 	CurrentLocation string `json:"current_location"`
+	Linkedin string `json:"linkedin"`
+	Github string `json:"github"`
+	ProfilePicture string `json:"profile_picture"`
 	PreferredLocation string `json:"preferred_location"`
 }

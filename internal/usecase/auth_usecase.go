@@ -42,8 +42,7 @@ func (a *authUsecase) Login(input models.LoginRequest) (*models.LoginResponse, e
 		if err:=a.hasher.CheckPassword(input.Password, candidate.Password);err!=nil {
 			return nil, errors.New("invalid credentials")
 		}
-		userID = strconv.Itoa(candidate.ID)
-	}
+		userID = candidate.ID	}
 
 	token, err := a.jwtMaker.GenerateToken(userID, role)
 	if err != nil {
