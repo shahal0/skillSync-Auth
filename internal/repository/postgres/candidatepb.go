@@ -1,8 +1,15 @@
 package postgres
 
 import (
+	"context"
 	"errors"
+	"io"
 	"math/rand"
+	"os"
+
+	"golang.org/x/oauth2"
+
+	//logger "skillsync-authservice/Logger"
 	model "skillsync-authservice/domain/models"
 	"skillsync-authservice/domain/repository"
 	"skillsync-authservice/pkg"
@@ -15,6 +22,7 @@ import (
 type candidatePG struct {
 	db       *gorm.DB
 	jwtMaker *pkg.JWTMaker
+	pkg      *pkg.GcsClient
 }
 
 func NewCandidateRepository(db *gorm.DB, jwtMaker *pkg.JWTMaker) repository.CandidateRepository {
@@ -28,7 +36,13 @@ func (c *candidatePG) CreateCandidate(profile *model.Candidate) (int, error) {
 	res, _ := strconv.Atoi(profile.ID)
 	return res, nil
 }
-
+func (c *candidatePG) VerifyToken(token string) (string, string, error) {
+	claims, err := c.jwtMaker.VerifyToken(token)
+	if err != nil {
+		return "", "", err
+	}
+	return claims.UserID, claims.Role, nil
+}
 func (c *candidatePG) UpdateCandidate(input *model.UpdateCandidateInput, userID string) error {
 	// Fetch the existing candidate by userID
 	var candidate model.Candidate
@@ -48,9 +62,6 @@ func (c *candidatePG) UpdateCandidate(input *model.UpdateCandidateInput, userID 
 	}
 	if input.Experience != 0 {
 		candidate.Experience = input.Experience
-	}
-	if input.Resume != "" {
-		candidate.Resume = input.Resume
 	}
 	if input.CurrentLocation != "" {
 		candidate.CurrentLocation = input.CurrentLocation
@@ -85,11 +96,24 @@ func (c *candidatePG) GetCandidateByUserID(userID string) (*model.Candidate, err
 
 func (c *candidatePG) AddEducation(education model.Education, userID string) error {
 	education.CandidateID = userID // Set the candidate ID
+
 	return c.db.Create(&education).Error
 }
 
-func (c *candidatePG) AddSkills(skills model.Skills) error {
-	return c.db.Create(&skills).Error
+func (c *candidatePG) AddSkills(skills model.Skills, candidateID string) error {
+	skills.CandidateID = candidateID // Set the candidate ID
+	// Check if the skill already exists for the candidate
+	var existingSkill model.Skills
+	err := c.db.Where("candidate_id = ? AND skill = ?", candidateID, skills.Skill).First(&existingSkill).Error
+	if err == nil {
+		// Skill already exists, update it
+		return c.db.Model(&existingSkill).Where("candidate_id = ? AND skill = ?", candidateID, skills.Skill).Updates(skills).Error
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	} else {
+		// Skill does not exist, create a new one
+		return c.db.Create(&skills).Error
+	}
 }
 
 func (c *candidatePG) GetCandidateByEmail(email string) (*model.Candidate, error) {
@@ -122,9 +146,10 @@ func (c *candidatePG) Login(request model.LoginRequest) (*model.LoginResponse, e
 
 	// Create the response
 	response := &model.LoginResponse{
-		ID:    cand.ID,
-		Role:  "candidate",
-		Token: token,
+		ID:      cand.ID,
+		Role:    "candidate",
+		Token:   token,
+		Message: "Login successful",
 	}
 	return response, nil
 }
@@ -289,4 +314,82 @@ func (c *candidatePG) UpdatePasswordByID(userID string, hashedPassword string) e
 	return c.db.Model(&model.Candidate{}).
 		Where("id = ?", userID).
 		Update("password", hashedPassword).Error
+}
+
+func (c *candidatePG) AddResume(ctx context.Context, candidateID string, resumeReader io.Reader) (string, error) {
+	// Generate a unique file path for the resume
+	filePath := "resumes/" + candidateID + "_" + strconv.FormatInt(time.Now().Unix(), 10) + ".pdf"
+
+	// Save the resume file to storage
+	_, err := c.pkg.UploadResume(ctx, resumeReader, filePath)
+	if err != nil {
+		return "", err
+	}
+	// Save to CandidateResume table
+	candidateResume := model.CandidateResume{
+		CandidateID: candidateID,
+		GCSPath:     filePath,
+	}
+	if err := c.db.Create(&candidateResume).Error; err != nil {
+		return "", err
+	}
+
+	// Also update Candidate's Resume field
+	if err := c.db.Model(&model.Candidate{}).Where("id = ?", candidateID).Update("resume", filePath).Error; err != nil {
+		return "", err
+	}
+
+	return filePath, nil
+}
+
+func (c *candidatePG) AddResumePath(ctx context.Context, candidateID string, filePath string) error {
+	// Save to CandidateResume table
+	candidateResume := model.CandidateResume{
+		CandidateID: candidateID,
+		GCSPath:     filePath,
+	}
+	if err := c.db.Create(&candidateResume).Error; err != nil {
+		return err
+	}
+
+	// Update Candidate's Resume field
+	return c.db.Model(&model.Candidate{}).Where("id = ?", candidateID).Update("resume", filePath).Error
+}
+
+func (c *candidatePG) GoogleLogin(redirectURL string) (string, error) {
+	conf := pkg.GetGoogleOAuthConfig(redirectURL)
+	return conf.AuthCodeURL("state-token", oauth2.AccessTypeOffline), nil
+}
+
+func (c *candidatePG) GoogleCallback(code string) (*model.LoginResponse, error) {
+	conf := pkg.GetGoogleOAuthConfig(os.Getenv("GOOGLE_REDIRECT_URI"))
+	userinfo, err := pkg.GetGoogleUserInfo(conf, code)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find or create candidate in your DB
+	var candidate model.Candidate
+	if err := c.db.Where("email = ?", userinfo.Email).First(&candidate).Error; err != nil {
+		// Not found, create new candidate
+		candidate = model.Candidate{
+			Email: userinfo.Email,
+			Name:  userinfo.Name,
+			// You may want to set IsVerified = true, etc.
+		}
+		if err := c.db.Create(&candidate).Error; err != nil {
+			return nil, errors.New("failed to create candidate: " + err.Error())
+		}
+	}
+	tokenStr, err := c.jwtMaker.GenerateToken(candidate.ID, "candidate")
+	if err != nil {
+		return nil, errors.New("failed to generate JWT: " + err.Error())
+	}
+
+	return &model.LoginResponse{
+		ID:      candidate.ID,
+		Role:    "candidate",
+		Token:   tokenStr,
+		Message: "Google login successful",
+	}, nil
 }

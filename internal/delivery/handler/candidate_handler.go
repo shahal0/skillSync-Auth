@@ -2,15 +2,19 @@ package handlers
 
 import (
 	//"go/token"
-	"encoding/json"
+
 	"log"
 	"net/http"
+	"os"
+	logger "skillsync-authservice/Logger"
 	"skillsync-authservice/config"
 	model "skillsync-authservice/domain/models"
 	"skillsync-authservice/internal/usecase"
 	"skillsync-authservice/pkg"
 
+	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
 
@@ -35,9 +39,11 @@ func NewCandidateHandler(router *gin.RouterGroup, uc *usecase.CandidateUsecase) 
 		candidate.POST("/forgot-password", handler.ForgotPassword)
 		candidate.PUT("/reset-password", handler.ResetPassword)
 		candidate.PATCH("/change-password", handler.ChangePassword)
-		candidate.GET("/auth/google/login", GoogleLogin)
+		candidate.GET("/auth/google/login", func(c *gin.Context) {
+			GoogleLogin(c, "candidate")
+		})
 		candidate.GET("/auth/google/callback", GoogleCallback)
-
+		candidate.POST("/upload/resume", handler.UploadResume)
 	}
 }
 
@@ -56,6 +62,12 @@ func (h *CandidateHandler) UpdateProfile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input: " + err.Error()})
 		return
 	}
+
+	// Log the profile update request
+	logger.Log.WithFields(logrus.Fields{
+		"user_id": profile.ID,
+		"action":  "update_profile",
+	}).Info("Profile update request received")
 
 	// Call the usecase to update the candidate profile
 	err = h.usecase.UpdateCandidateProfile(c.Request.Context(), &profile, token)
@@ -114,7 +126,7 @@ func (h *CandidateHandler) UpdateSkills(c *gin.Context) {
 	skills.CandidateID = userID
 
 	// Call the usecase to add the skills
-	err = h.usecase.AddSkills(c.Request.Context(), skills)
+	err = h.usecase.AddSkills(c.Request.Context(), skills,token)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update skills"})
 		return
@@ -301,67 +313,90 @@ func (h *CandidateHandler) ChangePassword(c *gin.Context) {
 func GoogleCallback(c *gin.Context) {
 	state := c.Query("state")
 	if state == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "State parameter is missing"})
+		logger.HandleError(c, http.StatusBadRequest, nil, "State parameter is missing")
 		return
 	}
 
-	// Retrieve the stored state token (example: from Gin's context or session)
-	storedState, exists := c.Get("state")
-	if !exists || state != storedState {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid state token"})
+	// Retrieve the stored state token from the session
+	session := sessions.Default(c)
+	storedState := session.Get("state")
+	if storedState == nil || state != storedState {
+		logger.HandleError(c, http.StatusBadRequest, nil, "Invalid state token")
 		return
 	}
 
 	// Get the authorization code from the query parameters
 	code := c.Query("code")
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Authorization code not provided"})
+		logger.HandleError(c, http.StatusBadRequest, nil, "Authorization code not provided")
 		return
 	}
 
 	// Exchange the authorization code for an access token
 	token, err := config.GoogleOAuthConfig.Exchange(c, code)
 	if err != nil {
-		log.Println("Failed to exchange token:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange token: " + err.Error()})
+		logger.HandleError(c, http.StatusInternalServerError, err, "Failed to exchange token")
 		return
 	}
-	log.Println("Access Token:", token.AccessToken)
 
-	// Use the access token to get the user's information
-	client := config.GoogleOAuthConfig.Client(c, token)
-	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
-	if err != nil {
-		log.Println("Failed to get user info:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user info: " + err.Error()})
-		return
-	}
-	defer resp.Body.Close()
-
-	// Parse the user's information
-	var userInfo struct {
-		Email string `json:"email"`
-		Name  string `json:"name"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
-		log.Println("Failed to parse user info:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse user info: " + err.Error()})
-		return
-	}
-	log.Println("User Info:", userInfo)
-
-	// Handle user login or registration
-	c.JSON(http.StatusOK, gin.H{
-		"email": userInfo.Email,
-		"name":  userInfo.Name,
-	})
+	logger.Log.WithField("access_token", token.AccessToken).Info("Access token retrieved successfully")
+	c.JSON(http.StatusOK, gin.H{"message": "Google login successful"})
 }
 
-func GoogleLogin(c *gin.Context) {
-	log.Println("Google Client ID:", config.GoogleOAuthConfig.ClientID)
-	log.Println("Google Redirect URL:", config.GoogleOAuthConfig.RedirectURL)
+func GoogleLogin(c *gin.Context, userType string) {
 	state := pkg.GenerateStateToken()
+	session := sessions.Default(c)
+	session.Set("state", state) // Store the state token in the session
+	session.Save()              // Save the session
+
+	// Dynamically set the RedirectURL based on user type
+	baseRedirectURL := os.Getenv("GOOGLE_REDIRECT_URI") // Use the base redirect URL from the environment
+	var redirectURL string
+	if userType == "employer" {
+		redirectURL = baseRedirectURL + "/employer/auth/google/callback"
+	} else {
+		redirectURL = baseRedirectURL + "/candidate/auth/google/callback"
+	}
+
+	log.Println("Redirect URL:", redirectURL)
+
+	// Update the RedirectURL in GoogleOAuthConfig
+	config.GoogleOAuthConfig.RedirectURL = redirectURL
+
+	// Generate the OAuth URL
 	url := config.GoogleOAuthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 	log.Println("Generated Google OAuth URL:", url)
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
+
+func (h *CandidateHandler) UploadResume(c *gin.Context) {
+	authHeader := c.Request.Header.Get("Authorization")
+	token, err := pkg.ExtractTokenFromHeader(authHeader)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: " + err.Error()})
+		return
+	}
+
+	userID, err := h.usecase.ExtractUserIDFromToken(token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: " + err.Error()})
+		return
+	}
+
+	file, fileHeader, err := c.Request.FormFile("resume")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Resume file is required"})
+		return
+	}
+	defer file.Close()
+
+	_,errr := h.usecase.AddResume(c.Request.Context(), file, fileHeader, userID)
+	if errr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upload resume"+": " + errr.Error()})
+		logger.Log.WithError(errr).Error("Failed to upload resume")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Resume uploaded successfully"})
+}
+

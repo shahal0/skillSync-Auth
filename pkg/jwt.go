@@ -22,6 +22,13 @@ type CustomClaims struct {
 	jwt.StandardClaims
 }
 
+// Claims represents the structure of the token claims.
+type Claims struct {
+	UserID string
+	Role   string
+	// Add other fields as needed
+}
+
 // NewJWTMaker creates a new JWT utility
 func NewJWTMaker(secretKey string) *JWTMaker {
 	return &JWTMaker{secretKey: secretKey}
@@ -106,4 +113,26 @@ func ExtractTokenFromHeader(authHeader string) (string, error) {
 	}
 
 	return token, nil
+}
+
+// VerifyToken verifies the provided token and returns the claims.
+func (j *JWTMaker) VerifyToken(token string) (*Claims, error) {
+	// Parse the token using the secret key
+	parsedToken, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
+		// Ensure the token's signing method is HMAC
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return []byte(j.secretKey), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !parsedToken.Valid {
+		return nil, errors.New("invalid token")
+	}
+	return &Claims{
+		UserID: parsedToken.Claims.(jwt.MapClaims)["user_id"].(string),
+		Role:   parsedToken.Claims.(jwt.MapClaims)["role"].(string),
+	}, nil
 }

@@ -1,4 +1,4 @@
-package domain
+package model
 
 type SignupRequest struct {
 	Name     string `json:"name"`
@@ -19,9 +19,15 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	ID    string `json:"id"`
-	Role  string `json:"role"`
-	Token string `json:"token"`
+	ID      string `json:"id"`
+	Role    string `json:"role"`
+	Token   string `json:"token"`
+	Message string `json:"message"`
+}
+
+type GenericResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
 }
 
 type VerificationTable struct {

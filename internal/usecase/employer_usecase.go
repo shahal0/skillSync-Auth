@@ -3,10 +3,14 @@ package usecase
 import (
 	"context"
 	"errors"
+	"math/rand"
+	"net/smtp"
+	"strconv"
+	"time"
+
 	model "skillsync-authservice/domain/models"
 	"skillsync-authservice/domain/repository"
 	"skillsync-authservice/pkg"
-	"strconv"
 
 	"gorm.io/gorm"
 )
@@ -49,6 +53,8 @@ func (uc *EmployerUsecase) Signup(ctx context.Context, req model.SignupRequest) 
 	if existingEmployer != nil {
 		return nil, errors.New("email already exists")
 	}
+
+	// Hash the password
 	hashedPassword, err := pkg.NewPasswordManager().HashPassword(req.Password)
 	if err != nil {
 		return nil, errors.New("failed to hash password")
@@ -66,22 +72,83 @@ func (uc *EmployerUsecase) Signup(ctx context.Context, req model.SignupRequest) 
 		return nil, err
 	}
 
+	// Send OTP to the employer's email
+	err = uc.SendOtp(req.Email, 5*60) // 5 minutes expiry
+	if err != nil {
+		return nil, errors.New("failed to send OTP: " + err.Error())
+	}
+
 	return &model.AuthResponse{
 		ID:      strconv.Itoa(id),
-		Message: "Employer registered successfully",
+		Message: "Employer registered successfully. OTP sent to email.",
 	}, nil
+}
+
+// SendOtp generates and sends an OTP to the given email
+func (uc *EmployerUsecase) SendOtp(email string, expiry int64) error {
+	rand.Seed(time.Now().UnixNano())
+	otp := rand.Intn(900000) + 100000 // Generate a 6-digit OTP
+
+	// Store OTP in the database
+	verification := model.VerificationTable{
+		Email:              email,
+		OTP:                uint64(otp),
+		OTPExpiry:          uint64(time.Now().Unix() + expiry),
+		VerificationStatus: false,
+	}
+	if err := uc.db.Where("email = ?", email).
+		Assign(verification).
+		FirstOrCreate(&verification).Error; err != nil {
+		return errors.New("failed to store OTP in the database: " + err.Error())
+	}
+
+	// Send OTP via email
+	auth := smtp.PlainAuth("", "petplate0@gmail.com", "fsjazfcjcllfnxqu", "smtp.gmail.com")
+	message := []byte("Subject: Your OTP Code\n\nYour OTP is: " + strconv.Itoa(otp))
+	err := smtp.SendMail("smtp.gmail.com:587", auth, "petplate0@gmail.com", []string{email}, message)
+	if err != nil {
+		return errors.New("failed to send OTP via email: " + err.Error())
+	}
+
+	return nil
 }
 
 func (uc *EmployerUsecase) Login(input model.LoginRequest) (*model.LoginResponse, error) {
 	return uc.employerRepo.Login(input)
 }
 
+func (uc *EmployerUsecase) GoogleLogin(redirectURL string) (string, error) {
+	return uc.employerRepo.GoogleLogin(redirectURL)
+}
+
+func (uc *EmployerUsecase) GoogleCallback(ctx context.Context, req model.GoogleCallbackRequest) (*model.LoginResponse, error) {
+	// Call the repository's GoogleCallback method with just the code
+	loginResp, err := uc.employerRepo.GoogleCallback(req.Code)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Convert LoginResponse to AuthResponse
+	// Note: AuthResponse only has ID and Message fields, not Token
+	return &model.LoginResponse{
+		ID:      loginResp.ID,
+		Message: loginResp.Message,
+		Token:   loginResp.Token,
+	}, nil
+}
 func (uc *EmployerUsecase) VerifyEmail(ctx context.Context, email string, otp uint64) error {
 	return uc.employerRepo.VerifyEmail(email, otp)
 }
 
-func (uc *EmployerUsecase) ResendOtp(ctx context.Context, email string) error {
-	return uc.employerRepo.ResendOtp(email)
+func (uc *EmployerUsecase) ResendOtp(ctx context.Context, req model.ResendOtpRequest) (model.GenericResponse, error) {
+	err := uc.employerRepo.ResendOtp(req.Email)
+	if err != nil {
+		return model.GenericResponse{}, err
+	}
+	return model.GenericResponse{
+		Message: "OTP sent successfully",
+		Success: true,
+	}, nil
 }
 
 func (uc *EmployerUsecase) ForgotPassword(ctx context.Context, email string) error {

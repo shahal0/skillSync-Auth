@@ -12,6 +12,7 @@ import (
 	"time"
 
 	//"github.com/golang-jwt/jwt"
+	"golang.org/x/oauth2"
 	"gorm.io/gorm"
 
 	//"context"
@@ -29,7 +30,7 @@ func NewEmployerRepository(db *gorm.DB) repository.EmployerRepository {
 
 func (e *employerPG) CreateEmployer(profile *model.Employer) (int, error) {
 	if err := e.db.Create(profile).Error; err != nil {
-		return 0, err
+		return 0, errors.New("failed to create employer record: " + err.Error())
 	}
 	return profile.ID, nil
 }
@@ -55,9 +56,9 @@ func (e *employerPG) GetEmployerByUserID(userID string) (*model.Employer, error)
 	}
 	return &emp, nil
 }
-func (r *employerPG) GetEmployerByEmail(email string) (*model.Employer, error) {
+func (e *employerPG) GetEmployerByEmail(email string) (*model.Employer, error) {
 	var employer model.Employer
-	err := r.db.Where("email = ?", email).First(&employer).Error
+	err := e.db.Where("email = ?", email).First(&employer).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil // Return nil if no record is found
 	}
@@ -94,9 +95,10 @@ func (r *employerPG) Login(request model.LoginRequest) (*model.LoginResponse, er
 
 	// Create the response
 	response := &model.LoginResponse{
-		ID:    id,
-		Role:  "employer",
-		Token: token,
+		ID:      id,
+		Role:    "employer",
+		Token:   token,
+		Message: "Login successful",
 	}
 	return response, nil
 }
@@ -108,18 +110,23 @@ func (e *employerPG) Signup(request model.SignupRequest) (*model.AuthResponse, e
 		Password:    request.Password,
 	}
 
+	// Create the employer record in the database
 	if err := e.db.Create(profile).Error; err != nil {
-		return nil, err
+		return nil, errors.New("failed to create employer record: " + err.Error())
 	}
-	err := pkg.SendOtp(e.db, request.Email, 5)
-	if err != nil {
-		return nil, err
-	}
-	response := &model.AuthResponse{
-		ID:      strconv.Itoa(profile.ID),
-		Message: "Employer created successfully",
-	}
-	return response, nil
+
+	// Generate a token
+	id := strconv.Itoa(profile.ID)
+	//, err := e.jwtMaker.GenerateToken(id, "employer")
+	// if err != nil {
+	// 	return nil, errors.New("failed to generate token: " + err.Error())
+	// }
+
+	// Return the AuthResponse
+	return &model.AuthResponse{
+		ID:      id,
+		Message: "Employer registered successfully. OTP sent to email.",
+	}, nil
 }
 
 func (r *employerPG) SendOtp(email string) error {
@@ -252,4 +259,42 @@ func (r *employerPG) UpdatePasswordByID(userID string, hashedPassword string) er
 	return r.db.Model(&model.Employer{}).
 		Where("id = ?", userID).
 		Update("password", hashedPassword).Error
+}
+
+func (e *employerPG) GoogleLogin(redirectURL string) (string, error) {
+	conf := pkg.GetGoogleOAuthConfig(redirectURL)
+	return conf.AuthCodeURL("state-token", oauth2.AccessTypeOffline), nil
+}
+
+func (e *employerPG) GoogleCallback(code string) (*model.LoginResponse, error) {
+	conf := pkg.GetGoogleOAuthConfig(os.Getenv("GOOGLE_REDIRECT_URI"))
+	userinfo, err := pkg.GetGoogleUserInfo(conf, code)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find or create employer in your DB
+	var employer model.Employer
+	if err := e.db.Where("email = ?", userinfo.Email).First(&employer).Error; err != nil {
+		// Not found, create new employer
+		employer = model.Employer{
+			Email: userinfo.Email,
+			CompanyName:  userinfo.Name,
+			// You may want to set IsVerified = true, etc.
+		}
+		if err := e.db.Create(&employer).Error; err != nil {
+			return nil, errors.New("failed to create employer: " + err.Error())
+		}
+	}
+	tokenStr, err := e.jwtMaker.GenerateToken(strconv.Itoa(employer.ID), "employer")
+	if err != nil {
+		return nil, errors.New("failed to generate JWT: " + err.Error())
+	}
+
+	return &model.LoginResponse{
+		ID:      strconv.Itoa(employer.ID),
+		Role:    "employer",
+		Token:   tokenStr,
+		Message: "Google login successful",
+	}, nil
 }

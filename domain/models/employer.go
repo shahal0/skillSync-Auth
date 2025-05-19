@@ -1,4 +1,4 @@
-package domain
+package model
 
 type Employer struct {
 	ID          int `gorm:"primaryKey;autoIncrement"` // Auto-incrementing integer

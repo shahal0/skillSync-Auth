@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	//"os/user"
+	logger "skillsync-authservice/Logger"
 	model "skillsync-authservice/domain/models"
 	"skillsync-authservice/internal/usecase"
 	"skillsync-authservice/pkg"
@@ -17,8 +18,11 @@ type EmployerHandler struct {
 	jwthelper *pkg.JWTMaker
 }
 
-func NewEmployerHandler(router *gin.RouterGroup, uc *usecase.EmployerUsecase) {
-	handler := &EmployerHandler{usecase: uc}
+func NewEmployerHandler(router *gin.RouterGroup, uc *usecase.EmployerUsecase, jwtHelper *pkg.JWTMaker) {
+	handler := &EmployerHandler{
+		usecase:   uc,
+		jwthelper: jwtHelper, // Initialize jwthelper
+	}
 
 	employer := router.Group("/employer")
 	{
@@ -26,37 +30,46 @@ func NewEmployerHandler(router *gin.RouterGroup, uc *usecase.EmployerUsecase) {
 		employer.POST("/login", handler.Login)
 		employer.POST("/verify-email", handler.VerifyEmail)
 		employer.POST("/resend-otp", handler.ResendOtp)
-		employer.POST("/forgot-password", handler.ForgotPassword) // Forgot Password route
-		employer.POST("/reset-password", handler.ResetPassword)   // Reset Password route
+		employer.POST("/forgot-password", handler.ForgotPassword)
+		employer.POST("/reset-password", handler.ResetPassword)
 		employer.PATCH("/change-password", handler.ChangePassword)
+		employer.GET("/profile", handler.GetProfile)
+		employer.PUT("/profile/update", handler.UpdateProfile)
+		employer.GET("/auth/google/login", func(c *gin.Context) {
+			GoogleLogin(c, "employer")
+		})
+		employer.GET("/auth/google/callback", GoogleCallback)
 	}
 }
 
 func (h *EmployerHandler) UpdateProfile(c *gin.Context) {
+	if h.jwthelper == nil {
+		logger.HandleError(c, http.StatusInternalServerError, nil, "JWT helper is not initialized")
+		return
+	}
+
 	// Get the Authorization header
 	authHeader := c.Request.Header.Get("Authorization")
-	log.Println("Authorization Header:", authHeader)
+	logger.Log.WithField("auth_header", authHeader).Info("Authorization header received")
 
 	// Extract the token
 	token, err := pkg.ExtractTokenFromHeader(authHeader)
 	if err != nil {
-		log.Println("Token Extraction Error:", err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: " + err.Error()})
+		logger.HandleError(c, http.StatusUnauthorized, err, "Token extraction failed")
 		return
 	}
 
 	// Extract user ID from the token
 	userID, err := h.jwthelper.ExtractUserIDFromToken(token)
 	if err != nil {
-		log.Println("User ID Extraction Error:", err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: " + err.Error()})
+		logger.HandleError(c, http.StatusUnauthorized, err, "User ID extraction failed")
 		return
 	}
 
 	// Parse the request body
 	var profile model.UpdateEmployerInput
 	if err := c.ShouldBindJSON(&profile); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input " + err.Error()})
+		logger.HandleError(c, http.StatusBadRequest, err, "Invalid input")
 		return
 	}
 
@@ -66,10 +79,11 @@ func (h *EmployerHandler) UpdateProfile(c *gin.Context) {
 	// Call the usecase to update the profile
 	err = h.usecase.UpdateProfile(c.Request.Context(), &profile)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update profile " + err.Error()})
+		logger.HandleError(c, http.StatusInternalServerError, err, "Failed to update profile")
 		return
 	}
 
+	logger.Log.WithField("user_id", userID).Info("Employer profile updated successfully")
 	c.JSON(http.StatusOK, gin.H{"message": "Employer profile updated successfully"})
 }
 
@@ -98,18 +112,21 @@ func (h *EmployerHandler) GetProfile(c *gin.Context) {
 func (h *EmployerHandler) Signup(c *gin.Context) {
 	var req model.SignupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+		logger.HandleError(c, http.StatusBadRequest, err, "Invalid signup request")
 		return
 	}
 
-	// Call the usecase to handle signup and send OTP
-	res, err := h.usecase.Signup(c.Request.Context(), req)
+	logger.Log.WithField("email", req.Email).Info("Processing employer signup")
+
+	// Call the usecase to handle signup
+	resp, err := h.usecase.Signup(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		logger.HandleError(c, http.StatusInternalServerError, err, "Failed to signup employer"+err.Error())
 		return
 	}
 
-	c.JSON(http.StatusCreated, res)
+	logger.Log.WithField("email", req.Email).Info("Employer signup successful")
+	c.JSON(http.StatusOK, resp)
 }
 func (h *EmployerHandler) Login(c *gin.Context) {
 	var req model.LoginRequest
@@ -157,7 +174,9 @@ func (h *EmployerHandler) ResendOtp(c *gin.Context) {
 		return
 	}
 
-	err := h.usecase.ResendOtp(c.Request.Context(), req.Email)
+	_,err := h.usecase.ResendOtp(c.Request.Context(), model.ResendOtpRequest{
+		Email: req.Email,
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to resend OTP: " + err.Error()})
 		return
@@ -238,7 +257,7 @@ func (h *EmployerHandler) ChangePassword(c *gin.Context) {
 	}
 
 	// Call the usecase to change the password
-	log.Print("userid",userID)
+	log.Print("userid", userID)
 	err = h.usecase.ChangePassword(c.Request.Context(), userID, req.CurrentPassword, req.NewPassword)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Failed to change password: " + err.Error()})

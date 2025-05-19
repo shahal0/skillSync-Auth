@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"time"
-
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"golang.org/x/oauth2"
@@ -30,6 +29,7 @@ func init() {
 	log.Println("GOOGLE_CLIENT_ID:", os.Getenv("GOOGLE_CLIENT_ID"))
 	log.Println("GOOGLE_CLIENT_SECRET:", os.Getenv("GOOGLE_CLIENT_SECRET"))
 	log.Println("GOOGLE_REDIRECT_URI:", os.Getenv("GOOGLE_REDIRECT_URI"))
+	log.Println("GOOGLE_APPLICATION_CREDENTIALS:", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
 
 	// Initialize GoogleOAuthConfig after loading environment variables
 	GoogleOAuthConfig = &oauth2.Config{

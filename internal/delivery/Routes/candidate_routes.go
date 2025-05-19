@@ -12,5 +12,4 @@ func RegisterCandidateRoutes(r *gin.RouterGroup, candidateHandler *handler.Candi
 	r.PUT("/Profile/Update", candidateHandler.UpdateProfile)
 	r.POST("signup", candidateHandler.Signup)
 	r.POST("login", candidateHandler.Login)
-
 }

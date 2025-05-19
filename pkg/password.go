@@ -39,15 +39,17 @@ func (pm *PasswordManager) CheckPassword(plainPassword, hashedPassword string) e
 }
 
 func SendOtp(db *gorm.DB, to string, otpexpiry uint64) error {
+	log.Println("Generating OTP for:", to)
+
 	// Random OTP generation
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	otp := r.Intn(900000) + 100000 // Generates a 6-digit OTP
+	log.Println("Generated OTP:", otp)
+
 	now := time.Now().Unix()
+	expiryTime := now + int64(otpexpiry) // OTP expiry time
 
-	// Set OTP expiry time (5 minutes from now)
-	expiryTime := now + 5*60 // 5 minutes in seconds
-
-	// Create the VerificationTable record for storing the OTP
+	// Create or update the OTP record in the database
 	verification := models.VerificationTable{
 		Email:              to,
 		OTP:                uint64(otp),
@@ -55,29 +57,32 @@ func SendOtp(db *gorm.DB, to string, otpexpiry uint64) error {
 		VerificationStatus: false,
 	}
 
-	// Store or update the OTP information in the database
 	if err := db.Where("email = ?", verification.Email).
 		Assign(verification).
 		FirstOrCreate(&verification).Error; err != nil {
+		log.Println("Failed to store OTP in database:", err)
 		return errors.New("failed to store OTP information in the database: " + err.Error())
 	}
 
 	// Send email
 	auth := smtp.PlainAuth("", "petplate0@gmail.com", "fsjazfcjcllfnxqu", "smtp.gmail.com")
 	message := []byte("Subject: Your OTP Code\n\nYour OTP is: " + strconv.Itoa(otp))
-	err := smtp.SendMail("smtp.gmail.com:587", auth, "your-email@gmail.com", []string{to}, message)
+	err := smtp.SendMail("smtp.gmail.com:587", auth, "petplate0@gmail.com", []string{to}, message)
 	if err != nil {
+		log.Println("Failed to send email:", err)
 		return errors.New("failed to send email: " + err.Error())
 	}
 
+	log.Println("OTP sent successfully to:", to)
 	return nil
 }
+
 func GenerateStateToken() string {
-    b := make([]byte, 16) // 16 bytes = 128 bits
-    _, err := rand.Read(b)
-    if err != nil {
-        log.Println("Error generating state token:", err)
-        return ""
-    }
-    return base64.URLEncoding.EncodeToString(b)
+	b := make([]byte, 16) // 16 bytes = 128 bits
+	_, err := rand.Read(b)
+	if err != nil {
+		log.Println("Error generating state token:", err)
+		return ""
+	}
+	return base64.URLEncoding.EncodeToString(b)
 }
