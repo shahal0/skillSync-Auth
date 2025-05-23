@@ -11,6 +11,7 @@ type EmployerRepository interface {
 	UpdateEmployer(profile *model.UpdateEmployerInput) error
 	GetEmployerByUserID(userID string) (*model.Employer, error)
 	GetEmployerByEmail(email string) (*model.Employer, error)
+	GetEmployerById(id uint) (*model.Employer, error)
 	VerifyEmail(email string, otp uint64) error
 	ResendOtp(email string) error
 	SendPasswordResetOtp(email string) error

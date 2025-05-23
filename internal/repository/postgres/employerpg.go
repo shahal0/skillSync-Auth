@@ -56,8 +56,19 @@ func (e *employerPG) GetEmployerByUserID(userID string) (*model.Employer, error)
 	}
 	return &emp, nil
 }
+
+func (e *employerPG) GetEmployerById(id uint) (*model.Employer, error) {
+	var emp model.Employer
+	if err := e.db.Where("id = ?", id).First(&emp).Error; err != nil {
+		return nil, err
+	}
+	return &emp, nil
+}
 func (e *employerPG) GetEmployerByEmail(email string) (*model.Employer, error) {
 	var employer model.Employer
+	if email == "" {
+		return nil, errors.New("email is empty")
+	}
 	err := e.db.Where("email = ?", email).First(&employer).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil // Return nil if no record is found
@@ -72,7 +83,7 @@ func (r *employerPG) Login(request model.LoginRequest) (*model.LoginResponse, er
 	var emp model.Employer
 
 	// Check if the email exists in the database
-	if err := r.db.Where("email = ?", request.Email).First(&emp).Error; err != nil {
+	if err := r.db.Where("email = ?", request.Email).First(&emp	).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("email not found")
 		}

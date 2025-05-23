@@ -44,6 +44,18 @@ func (uc *EmployerUsecase) GetProfile(ctx context.Context, token string) (*model
 	return uc.employerRepo.GetEmployerByUserID(userID)
 }
 
+// GetProfileById fetches an employer profile by ID without requiring a token
+func (uc *EmployerUsecase) GetProfileById(ctx context.Context, employerId string) (*model.Employer, error) {
+	// Convert string ID to uint if necessary
+	id, err := strconv.ParseUint(employerId, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch the employer profile using the ID
+	return uc.employerRepo.GetEmployerById(uint(id))
+}
+
 func (uc *EmployerUsecase) Signup(ctx context.Context, req model.SignupRequest) (*model.AuthResponse, error) {
 	// Check if the email already exists
 	existingEmployer, err := uc.employerRepo.GetEmployerByEmail(req.Email)

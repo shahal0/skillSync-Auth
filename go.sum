@@ -146,8 +146,8 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR38lUII=
 github.com/rogpeppe/go-internal v1.13.1/go.mod h1:uMEvuHeurkdAXX61udpOXGD/AzZDWNMNyH2VO9fmH0o=
-github.com/shahal0/skillsync-protos v0.0.0-20250518151503-9c00e2a027ef h1:u/ilKlf0pGh3u2AfpVsaWIoPP2ZbgQrxmH4N1dP/898=
-github.com/shahal0/skillsync-protos v0.0.0-20250518151503-9c00e2a027ef/go.mod h1:fYY7dW7ZnSF9VsCBHTGMmlwwvu3RCSaxauG1NBp19Zs=
+github.com/shahal0/skillsync-protos v0.0.0-20250523045229-1e16a5ab59e1 h1:s/D7pGFL9cpKYAZ4FTxS5RuYcpAz6hzDIX+0Y/WmmYM=
+github.com/shahal0/skillsync-protos v0.0.0-20250523045229-1e16a5ab59e1/go.mod h1:fYY7dW7ZnSF9VsCBHTGMmlwwvu3RCSaxauG1NBp19Zs=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
 github.com/spiffe/go-spiffe/v2 v2.5.0 h1:N2I01KCUkv1FAjZXJMwh95KK1ZIQLYbPfhaxw8WS0hE=

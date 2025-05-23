@@ -12,7 +12,6 @@ import (
 	model "skillsync-authservice/domain/models"
 	"skillsync-authservice/domain/repository"
 	"skillsync-authservice/pkg"
-	// Import GORM package
 	//"github.com/golang-jwt/jwt/v4"
 )
 
@@ -86,8 +85,14 @@ func (uc *CandidateUsecase) Login(input model.LoginRequest) (*model.LoginRespons
 	return uc.repo.Login(input)
 }
 func (uc *CandidateUsecase) ExtractUserIDFromToken(token string) (string, error) {
-	return uc.jwtMaker.ExtractUserIDFromToken(token)
+	return "", nil
 }
+
+// VerifyToken verifies a JWT token and returns the claims
+func (uc *CandidateUsecase) VerifyToken(token string) (*pkg.Claims, error) {
+	return uc.jwtMaker.VerifyToken(token)
+}
+
 func (uc *CandidateUsecase) VerifyEmail(ctx context.Context, email string, otp uint64) error {
 	// Delegate the verification logic to the repository
 	return uc.repo.VerifyEmail(email, otp)

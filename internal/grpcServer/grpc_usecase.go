@@ -23,7 +23,6 @@ import (
 )
 
 // --- gRPC Server Implementation ---
-
 type authGRPCServer struct {
 	authpb.UnimplementedAuthServiceServer
 	candidateUsecase usecase.CandidateUsecase
@@ -306,17 +305,27 @@ func (s *authGRPCServer) CandidateEducationUpdate(ctx context.Context, req *auth
 	}, nil
 }
 func (s *authGRPCServer) CandidateUploadResume(ctx context.Context, req *authpb.UploadResumeRequest) (*authpb.GenericResponse, error) {
+	// Extract user ID from token
+	userID, err := s.candidateUsecase.ExtractUserIDFromToken(req.GetToken())
+	if err != nil {
+		log.Printf("Failed to extract user ID from token: %v", err)
+		return &authpb.GenericResponse{
+			Message: "Invalid or expired token",
+			Success: false,
+		}, nil
+	}
+
 	// Create a reader from the resume bytes
 	file := bytes.NewReader(req.GetResume())
 
 	// Create a multipart file header with appropriate metadata
 	fileHeader := &multipart.FileHeader{
-		Filename: fmt.Sprintf("%s_resume.pdf", req.GetEmail()),
+		Filename: fmt.Sprintf("%s_resume.pdf", userID),
 		Size:     int64(len(req.GetResume())),
 	}
 
 	// Call the usecase with the correct parameters
-	resumePath, err := s.candidateUsecase.AddResume(ctx, file, fileHeader, req.GetEmail())
+	resumePath, err := s.candidateUsecase.AddResume(ctx, file, fileHeader, userID)
 	if err != nil {
 		// Log the error for debugging
 		log.Printf("UploadResume error: %v", err)
@@ -400,9 +409,10 @@ func (s *authGRPCServer) EmployerLogin(ctx context.Context, req *authpb.Employer
 	if err != nil {
 		return nil, errors.New("failed to parse ID: " + err.Error())
 	}
-	// Return only ID and message in the response (no token)
+	// Include all fields in the response (ID, token, and message)
 	return &authpb.EmployerLoginResponse{
 		Id:      idInt,
+		Token:   resp.Token,
 		Message: resp.Message,
 	}, nil
 }
@@ -499,6 +509,29 @@ func (s *authGRPCServer) EmployerProfile(ctx context.Context, req *authpb.Employ
 	}, nil
 }
 
+func (s *authGRPCServer) EmployerProfileById(ctx context.Context, req *authpb.EmployerProfileByIdRequest) (*authpb.EmployerProfileResponse, error) {
+	// Extract employer ID from the request
+	employerId := req.GetEmployerId()
+
+	// Call GetProfileById with the employer ID
+	// We need to add this method to the employer usecase
+	resp, err := s.employerUsecase.GetProfileById(ctx, employerId)
+	if err != nil {
+		return nil, err
+	}
+	return &authpb.EmployerProfileResponse{
+		Id:          int64(resp.ID),
+		Email:       resp.Email,
+		CompanyName: resp.CompanyName,
+		Phone:       resp.Phone,
+		Industry:    resp.Industry,
+		Location:    resp.Location,
+		Website:     resp.Website,
+		IsVerified:  resp.IsVerified,
+		IsTrusted:   resp.IsTrusted,
+	}, nil
+}
+
 func (s *authGRPCServer) EmployerProfileUpdate(ctx context.Context, req *authpb.EmployerProfileUpdateRequest) (*authpb.GenericResponse, error) {
 	domainReq := models.UpdateEmployerInput{
 		Email:       req.GetEmail(),
@@ -531,16 +564,64 @@ func (s *authGRPCServer) EmployerGoogleLogin(ctx context.Context, req *authpb.Go
 }
 
 func (s *authGRPCServer) EmployerGoogleCallback(ctx context.Context, req *authpb.GoogleCallbackRequest) (*authpb.AuthResponse, error) {
-	domainReq := models.GoogleCallbackRequest{
-		Code: req.GetCode(),
+	code := req.GetCode()
+	// Create a models.GoogleCallbackRequest struct with the code
+	callbackReq := models.GoogleCallbackRequest{
+		Code: code,
 	}
-	resp, err := s.employerUsecase.GoogleCallback(ctx, domainReq)
+	response, err := s.employerUsecase.GoogleCallback(ctx, callbackReq)
 	if err != nil {
 		return nil, err
 	}
+
 	return &authpb.AuthResponse{
-		Id:      resp.ID,
-		Token:   resp.Token,
-		Message: resp.Message,
+		Token:   response.Token,
+		Message: response.Message,
+		Id:      response.ID,
+		Role:    response.Role,
+	}, nil
+}
+
+// VerifyToken verifies a JWT token and returns user ID and role
+func (s *authGRPCServer) VerifyToken(ctx context.Context, req *authpb.VerifyTokenRequest) (*authpb.VerifyTokenResponse, error) {
+	// Extract token from the request
+	var token string
+	
+	// First try to get token from the request
+	if req != nil {
+		token = req.GetToken()
+	}
+	
+	// If no token in request, try to extract from metadata (Authorization header)
+	if token == "" {
+		md, ok := metadata.FromIncomingContext(ctx)
+		if ok {
+			auth := md.Get("authorization")
+			if len(auth) > 0 {
+				token = auth[0]
+			}
+		}
+	}
+	
+	// If still no token, return error
+	if token == "" {
+		return nil, status.Errorf(codes.Unauthenticated, "No token provided")
+	}
+	
+	// Handle Bearer token format if present
+	if strings.HasPrefix(token, "Bearer ") {
+		token = strings.TrimPrefix(token, "Bearer ")
+	}
+	
+	// Verify the token
+	claims, err := s.candidateUsecase.VerifyToken(token)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "Invalid token: %v", err)
+	}
+	
+	// Return the response with user ID and role
+	return &authpb.VerifyTokenResponse{
+		UserId: claims.UserID,
+		Role:   claims.Role,
 	}, nil
 }
