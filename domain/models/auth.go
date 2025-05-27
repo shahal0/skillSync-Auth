@@ -1,10 +1,11 @@
 package model
 
 type SignupRequest struct {
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Role     string `json:"role"` // "candidate" or "employer"
+	Name     string            `json:"name"`
+	Email    string            `json:"email"`
+	Password string            `json:"password"`
+	Role     string            `json:"role"`              // "candidate" or "employer"
+	Context  map[string]string `json:"context,omitempty"` // Additional fields like phone, industry, location, website
 }
 
 type AuthResponse struct {
@@ -37,4 +38,3 @@ type VerificationTable struct {
 	OTPExpiry          uint64
 	VerificationStatus bool
 }
-

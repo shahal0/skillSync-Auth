@@ -194,20 +194,20 @@ func (s *authGRPCServer) CandidateProfile(ctx context.Context, req *authpb.Candi
 	}
 
 	return &authpb.CandidateProfileResponse{
-		Id:               resp.ID,
-		Email:            resp.Email,
-		Name:             resp.Name,
-		Phone:            resp.Phone,
-		Experience:       resp.Experience,
-		Skills:           skills,
-		Resume:           resp.Resume,
-		Education:        education,
-		CurrentLocation:  resp.CurrentLocation,
+		Id:                resp.ID,
+		Email:             resp.Email,
+		Name:              resp.Name,
+		Phone:             resp.Phone,
+		Experience:        resp.Experience,
+		Skills:            skills,
+		Resume:            resp.Resume,
+		Education:         education,
+		CurrentLocation:   resp.CurrentLocation,
 		PreferredLocation: resp.PreferredLocation,
-		Linkedin:         resp.Linkedin,
-		Github:           resp.Github,
-		ProfilePicture:   resp.ProfilePicture,
-		IsVerified:       resp.IsVerified,
+		Linkedin:          resp.Linkedin,
+		Github:            resp.Github,
+		ProfilePicture:    resp.ProfilePicture,
+		IsVerified:        resp.IsVerified,
 	}, nil
 }
 
@@ -277,7 +277,7 @@ func (s *authGRPCServer) CandidateEducationUpdate(ctx context.Context, req *auth
 		return nil, status.Error(codes.Unauthenticated, "authorization token is not provided")
 	}
 	token := tokens[0]
-	
+
 	// Convert proto education to domain model education
 	var educations []models.Education
 	for _, edu := range req.GetEducation() {
@@ -374,16 +374,27 @@ func (s *authGRPCServer) CandidateGoogleCallback(ctx context.Context, req *authp
 // --- Employer Endpoints ---
 
 func (s *authGRPCServer) EmployerSignup(ctx context.Context, req *authpb.EmployerSignupRequest) (*authpb.EmployerSignupResponse, error) {
+	// Create a context map to store additional employer details
+	contextMap := map[string]string{
+		"phone":    strconv.FormatInt(req.GetPhone(), 10),
+		"industry": req.GetIndustry(),
+		"location": req.GetLocation(),
+		"website":  req.GetWebsite(),
+	}
+
 	domainReq := models.SignupRequest{
 		Name:     req.GetCompanyName(),
 		Email:    req.GetEmail(),
 		Password: req.GetPassword(),
 		Role:     "employer",
+		Context:  contextMap,
 	}
+
 	resp, err := s.employerUsecase.Signup(ctx, domainReq)
 	if err != nil {
 		return nil, err
 	}
+
 	idInt, err := strconv.ParseInt(resp.ID, 10, 64)
 	if err != nil {
 		return nil, err
@@ -582,16 +593,31 @@ func (s *authGRPCServer) EmployerGoogleCallback(ctx context.Context, req *authpb
 	}, nil
 }
 
+func (s *authGRPCServer) GetCandidateSkills(ctx context.Context, req *authpb.GetCandidateSkillsRequest) (*authpb.GetCandidateSkillsResponse, error) {
+	// Get candidate ID from request
+	candidateID := req.GetCandidateId()
+
+	// Get skills from candidate usecase
+	skills, err := s.candidateUsecase.GetSkills(ctx, candidateID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "Failed to get candidate skills: %v", err)
+	}
+
+	return &authpb.GetCandidateSkillsResponse{
+		Skills: skills,
+	}, nil
+}
+
 // VerifyToken verifies a JWT token and returns user ID and role
 func (s *authGRPCServer) VerifyToken(ctx context.Context, req *authpb.VerifyTokenRequest) (*authpb.VerifyTokenResponse, error) {
 	// Extract token from the request
 	var token string
-	
+
 	// First try to get token from the request
 	if req != nil {
 		token = req.GetToken()
 	}
-	
+
 	// If no token in request, try to extract from metadata (Authorization header)
 	if token == "" {
 		md, ok := metadata.FromIncomingContext(ctx)
@@ -602,23 +628,23 @@ func (s *authGRPCServer) VerifyToken(ctx context.Context, req *authpb.VerifyToke
 			}
 		}
 	}
-	
+
 	// If still no token, return error
 	if token == "" {
 		return nil, status.Errorf(codes.Unauthenticated, "No token provided")
 	}
-	
+
 	// Handle Bearer token format if present
 	if strings.HasPrefix(token, "Bearer ") {
 		token = strings.TrimPrefix(token, "Bearer ")
 	}
-	
+
 	// Verify the token
 	claims, err := s.candidateUsecase.VerifyToken(token)
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "Invalid token: %v", err)
 	}
-	
+
 	// Return the response with user ID and role
 	return &authpb.VerifyTokenResponse{
 		UserId: claims.UserID,

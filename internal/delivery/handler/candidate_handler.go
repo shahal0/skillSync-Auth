@@ -116,19 +116,19 @@ func (h *CandidateHandler) UpdateSkills(c *gin.Context) {
 	}
 
 	// Parse the request body
-	var skills model.Skills
-	if err := c.ShouldBindJSON(&skills); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+	var skill model.Skills
+	if err := c.ShouldBindJSON(&skill); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input: " + err.Error()})
 		return
 	}
 
-	// Set the CandidateID in the skills object
-	skills.CandidateID = userID
+	// Set the candidate ID
+	skill.CandidateID = userID
 
-	// Call the usecase to add the skills
-	err = h.usecase.AddSkills(c.Request.Context(), skills,token)
+	// Call the usecase to add the skill
+	err = h.usecase.AddSkills(c.Request.Context(), skill, token)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update skills"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

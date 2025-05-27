@@ -10,6 +10,7 @@ import (
 	"skillsync-authservice/pkg"
 	"strconv"
 	"time"
+	//"context"
 
 	//"github.com/golang-jwt/jwt"
 	"golang.org/x/oauth2"
@@ -83,7 +84,7 @@ func (r *employerPG) Login(request model.LoginRequest) (*model.LoginResponse, er
 	var emp model.Employer
 
 	// Check if the email exists in the database
-	if err := r.db.Where("email = ?", request.Email).First(&emp	).Error; err != nil {
+	if err := r.db.Where("email = ?", request.Email).First(&emp).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("email not found")
 		}
@@ -115,10 +116,17 @@ func (r *employerPG) Login(request model.LoginRequest) (*model.LoginResponse, er
 }
 
 func (e *employerPG) Signup(request model.SignupRequest) (*model.AuthResponse, error) {
+	// Extract additional fields from the request context if available
+	phone, _ := strconv.ParseInt(request.Context["phone"], 10, 64)
+
 	profile := &model.Employer{
 		CompanyName: request.Name,
 		Email:       request.Email,
 		Password:    request.Password,
+		Phone:       phone,
+		Industry:    request.Context["industry"],
+		Location:    request.Context["location"],
+		Website:     request.Context["website"],
 	}
 
 	// Create the employer record in the database
@@ -289,8 +297,8 @@ func (e *employerPG) GoogleCallback(code string) (*model.LoginResponse, error) {
 	if err := e.db.Where("email = ?", userinfo.Email).First(&employer).Error; err != nil {
 		// Not found, create new employer
 		employer = model.Employer{
-			Email: userinfo.Email,
-			CompanyName:  userinfo.Name,
+			Email:       userinfo.Email,
+			CompanyName: userinfo.Name,
 			// You may want to set IsVerified = true, etc.
 		}
 		if err := e.db.Create(&employer).Error; err != nil {

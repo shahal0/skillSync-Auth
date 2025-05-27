@@ -73,12 +73,31 @@ func (uc *EmployerUsecase) Signup(ctx context.Context, req model.SignupRequest) 
 	}
 	req.Password = hashedPassword
 
-	// Create the employer record
+	// Parse phone number from context if available
+	var phone int64
+	if phoneStr, ok := req.Context["phone"]; ok && phoneStr != "" {
+		phone, _ = strconv.ParseInt(phoneStr, 10, 64)
+	}
+
+	// Create the employer record with all available details
 	employer := &model.Employer{
 		Email:       req.Email,
 		Password:    req.Password,
 		CompanyName: req.Name,
+		Phone:       phone,
 	}
+
+	// Add optional fields if they exist in the context
+	if industry, ok := req.Context["industry"]; ok {
+		employer.Industry = industry
+	}
+	if location, ok := req.Context["location"]; ok {
+		employer.Location = location
+	}
+	if website, ok := req.Context["website"]; ok {
+		employer.Website = website
+	}
+
 	id, err := uc.employerRepo.CreateEmployer(employer)
 	if err != nil {
 		return nil, err
@@ -139,7 +158,7 @@ func (uc *EmployerUsecase) GoogleCallback(ctx context.Context, req model.GoogleC
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Convert LoginResponse to AuthResponse
 	// Note: AuthResponse only has ID and Message fields, not Token
 	return &model.LoginResponse{

@@ -54,6 +54,12 @@ func (uc *CandidateUsecase) AddSkills(ctx context.Context, skills model.Skills, 
 	}
 	return uc.repo.AddSkills(skills, userID)
 }
+
+
+
+func (uc *CandidateUsecase) GetSkills(ctx context.Context, candidateID string) ([]string, error) {
+	return uc.repo.GetSkills(candidateID)
+}
 func (uc *CandidateUsecase) AddEducation(ctx context.Context, edu model.Education, token string) error {
 	// Extract user ID from token
 	userID, err := uc.jwtMaker.ExtractUserIDFromToken(token)

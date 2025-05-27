@@ -17,6 +17,7 @@ type CandidateRepository interface {
 	GetCandidateByEmail(email string) (*model.Candidate, error)
 	VerifyToken(token string) (string,string, error)
 	AddSkills(skills model.Skills,userid string) error
+	GetSkills(candidateID string) ([]string, error)
 	AddEducation(edu model.Education,userid string) error
 	VerifyEmail(email string,otp uint64) error
 	ResendOtp(email string) error

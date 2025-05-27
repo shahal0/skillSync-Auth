@@ -11,7 +11,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/joho/godotenv v1.5.1
-	github.com/shahal0/skillsync-protos v0.0.0-20250523045229-1e16a5ab59e1
+	github.com/shahal0/skillsync-protos v0.0.0-20250524085635-2a8d007a4144
 	github.com/sirupsen/logrus v1.9.3
 	golang.org/x/crypto v0.38.0
 	golang.org/x/oauth2 v0.30.0

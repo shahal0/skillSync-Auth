@@ -2,11 +2,12 @@ syntax = "proto3";
 
 package auth;
 
-option go_package = "skillsync-authservice/proto";
+option go_package = "./gen/authpb";
 
 service AuthService {
     rpc Signup (SignupRequest) returns (SignupResponse);
     rpc Login (LoginRequest) returns (LoginResponse);
+    rpc GetCandidateSkills (GetCandidateSkillsRequest) returns (GetCandidateSkillsResponse);
 }
 
 message SignupRequest {
@@ -27,4 +28,12 @@ message LoginRequest {
 message LoginResponse {
     string token = 1;
     string message = 2;
+}
+
+message GetCandidateSkillsRequest {
+    string candidate_id = 1;
+}
+
+message GetCandidateSkillsResponse {
+    repeated string skills = 1;
 }

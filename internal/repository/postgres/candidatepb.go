@@ -3,9 +3,12 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"os"
+	"strings"
 
 	"golang.org/x/oauth2"
 
@@ -101,20 +104,32 @@ func (c *candidatePG) AddEducation(education model.Education, userID string) err
 }
 
 func (c *candidatePG) AddSkills(skills model.Skills, candidateID string) error {
-	skills.CandidateID = candidateID // Set the candidate ID
-	// Check if the skill already exists for the candidate
+	// Normalize the skill
+	skills.CandidateID = candidateID
+	skills.Skill = strings.TrimSpace(skills.Skill)
+	if skills.Skill == "" {
+		return errors.New("skill cannot be empty")
+	}
+
+	log.Printf("DEBUG: Adding skill '%s' for candidate %s", skills.Skill, candidateID)
+
+	// Check if the skill already exists for the candidate (case insensitive)
 	var existingSkill model.Skills
-	err := c.db.Where("candidate_id = ? AND skill = ?", candidateID, skills.Skill).First(&existingSkill).Error
+	err := c.db.Where("candidate_id = ? AND LOWER(skill) = LOWER(?)", candidateID, skills.Skill).First(&existingSkill).Error
 	if err == nil {
 		// Skill already exists, update it
-		return c.db.Model(&existingSkill).Where("candidate_id = ? AND skill = ?", candidateID, skills.Skill).Updates(skills).Error
+		log.Printf("DEBUG: Updating existing skill '%s' for candidate %s", skills.Skill, candidateID)
+		return c.db.Model(&existingSkill).Updates(skills).Error
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Printf("ERROR: Failed to check for existing skill: %v", err)
 		return err
-	} else {
-		// Skill does not exist, create a new one
-		return c.db.Create(&skills).Error
 	}
+
+	// Skill does not exist, create a new one
+	log.Printf("DEBUG: Creating new skill '%s' for candidate %s", skills.Skill, candidateID)
+	return c.db.Create(&skills).Error
 }
+
 
 func (c *candidatePG) GetCandidateByEmail(email string) (*model.Candidate, error) {
 	var emp model.Candidate
@@ -392,4 +407,36 @@ func (c *candidatePG) GoogleCallback(code string) (*model.LoginResponse, error) 
 		Token:   tokenStr,
 		Message: "Google login successful",
 	}, nil
+}
+
+func (c *candidatePG) GetSkills(candidateID string) ([]string, error) {
+	log.Printf("DEBUG: Getting skills for candidate ID: %s", candidateID)
+
+	var skills []model.Skills
+	// Use Debug() to show the SQL query and add ORDER BY to ensure consistent results
+	if err := c.db.Debug().Table("candidate_skills").Where("candidate_id = ?", candidateID).Order("skill ASC").Find(&skills).Error; err != nil {
+		log.Printf("ERROR: Failed to get skills for candidate %s: %v", candidateID, err)
+		return nil, fmt.Errorf("failed to get skills: %w", err)
+	}
+	log.Printf("DEBUG: Raw SQL results for candidate %s: %+v", candidateID, skills)
+
+	log.Printf("DEBUG: Found %d skills for candidate %s", len(skills), candidateID)
+
+	// Extract just the skill names, normalizing them
+	skillNames := make([]string, 0, len(skills)) // Use 0 length but full capacity
+	for _, skill := range skills {
+		// Normalize the skill name
+		skillName := strings.TrimSpace(skill.Skill)
+		if skillName != "" { // Only include non-empty skills
+			// Add the skill name without proficiency level for matching
+			skillNames = append(skillNames, skillName)
+			log.Printf("DEBUG: Found skill: %s (Level: %s)", skillName, skill.Level)
+		}
+	}
+
+	if len(skillNames) == 0 {
+		log.Printf("WARNING: No valid skills found for candidate %s", candidateID)
+	}
+
+	return skillNames, nil
 }
