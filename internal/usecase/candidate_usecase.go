@@ -202,3 +202,17 @@ func (u *CandidateUsecase) GoogleLogin(redirectURL string) (string, error) {
 func (u *CandidateUsecase) GoogleCallback(code string) (*model.LoginResponse, error) {
 	return u.repo.GoogleCallback(code)
 }
+
+// GetCandidatesWithPagination retrieves candidates with pagination and filtering
+func (uc *CandidateUsecase) GetCandidatesWithPagination(ctx context.Context, page, limit int32, filters map[string]interface{}) ([]*model.Candidate, int64, error) {
+	// Validate pagination parameters
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 10
+	}
+
+	// Call the repository method to get paginated candidates
+	return uc.repo.GetCandidatesWithPagination(page, limit, filters)
+}

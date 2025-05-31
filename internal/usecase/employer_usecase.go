@@ -208,9 +208,10 @@ func (uc *EmployerUsecase) ExtractUserIDFromToken(token string) (string, error) 
 	return uc.jwtcliams.ExtractUserIDFromToken(token)
 }
 func (uc *EmployerUsecase) ChangePassword(ctx context.Context, userID string, currentPassword string, newPassword string) error {
+	// Fetch the employer by ID
 	employer, err := uc.employerRepo.GetEmployerByUserID(userID)
 	if err != nil {
-		return errors.New("user not found")
+		return errors.New("employer not found")
 	}
 
 	// Verify the current password
@@ -225,6 +226,20 @@ func (uc *EmployerUsecase) ChangePassword(ctx context.Context, userID string, cu
 		return errors.New("failed to hash new password")
 	}
 
-	// Update the password in the database
+	// Update the password
 	return uc.employerRepo.UpdatePasswordByID(userID, hashedPassword)
+}
+
+// GetEmployersWithPagination retrieves employers with pagination and filtering
+func (uc *EmployerUsecase) GetEmployersWithPagination(ctx context.Context, page, limit int32, filters map[string]interface{}) ([]*model.Employer, int64, error) {
+	// Validate pagination parameters
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 10
+	}
+
+	// Call the repository method to get paginated employers
+	return uc.employerRepo.GetEmployersWithPagination(page, limit, filters)
 }

@@ -65,6 +65,7 @@ func (e *employerPG) GetEmployerById(id uint) (*model.Employer, error) {
 	}
 	return &emp, nil
 }
+
 func (e *employerPG) GetEmployerByEmail(email string) (*model.Employer, error) {
 	var employer model.Employer
 	if email == "" {
@@ -316,4 +317,49 @@ func (e *employerPG) GoogleCallback(code string) (*model.LoginResponse, error) {
 		Token:   tokenStr,
 		Message: "Google login successful",
 	}, nil
+}
+
+// GetEmployersWithPagination retrieves employers with pagination and filtering support
+func (e *employerPG) GetEmployersWithPagination(page, limit int32, filters map[string]interface{}) ([]*model.Employer, int64, error) {
+	// Ensure valid pagination parameters
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 10
+	}
+
+	// Start building the query
+	query := e.db.Model(&model.Employer{})
+
+	// Apply filters if provided
+	if keyword, ok := filters["keyword"].(string); ok && keyword != "" {
+		keywordSearch := "%" + keyword + "%"
+		query = query.Where("company_name ILIKE ? OR email ILIKE ?", keywordSearch, keywordSearch)
+	}
+
+	if industry, ok := filters["industry"].(string); ok && industry != "" {
+		query = query.Where("industry ILIKE ?", "%"+industry+"%")
+	}
+
+	if location, ok := filters["location"].(string); ok && location != "" {
+		query = query.Where("location ILIKE ?", "%"+location+"%")
+	}
+
+	// Count total records that match the filters
+	var totalCount int64
+	if err := query.Count(&totalCount).Error; err != nil {
+		return nil, 0, errors.New("error counting employers: " + err.Error())
+	}
+
+	// Apply pagination
+	offset := (page - 1) * limit
+	
+	// Execute the query with pagination
+	var employers []*model.Employer
+	if err := query.Offset(int(offset)).Limit(int(limit)).Find(&employers).Error; err != nil {
+		return nil, 0, errors.New("error fetching employers: " + err.Error())
+	}
+
+	return employers, totalCount, nil
 }

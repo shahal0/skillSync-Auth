@@ -19,7 +19,7 @@ import (
 	models "skillsync-authservice/domain/models"
 	"skillsync-authservice/internal/usecase"
 
-	"github.com/shahal0/skillsync-protos/gen/authpb"
+	authpb "skillsync-authservice/skillsync-protos/gen/authpb"
 )
 
 // --- gRPC Server Implementation ---
@@ -649,5 +649,172 @@ func (s *authGRPCServer) VerifyToken(ctx context.Context, req *authpb.VerifyToke
 	return &authpb.VerifyTokenResponse{
 		UserId: claims.UserID,
 		Role:   claims.Role,
+	}, nil
+}
+
+// GetCandidatesWithPagination implements the GetCandidatesWithPagination gRPC method
+func (s *authGRPCServer) GetCandidatesWithPagination(ctx context.Context, req *authpb.GetCandidatesRequest) (*authpb.GetCandidatesResponse, error) {
+	// Extract pagination parameters from the request
+	paginationReq := req.GetPagination()
+	page := int32(1)
+	limit := int32(10)
+
+	if paginationReq != nil {
+		page = paginationReq.GetPage()
+		limit = paginationReq.GetLimit()
+	}
+
+	// Create filters map from request parameters
+	filters := make(map[string]interface{})
+	if req.GetKeyword() != "" {
+		filters["keyword"] = req.GetKeyword()
+	}
+	if req.GetSkill() != "" {
+		filters["skill"] = req.GetSkill()
+	}
+	if req.GetLocation() != "" {
+		filters["location"] = req.GetLocation()
+	}
+	if req.GetMinExperience() > 0 {
+		filters["min_experience"] = req.GetMinExperience()
+	}
+
+	// Call the usecase to get paginated candidates
+	candidates, totalCount, err := s.candidateUsecase.GetCandidatesWithPagination(ctx, page, limit, filters)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "Failed to fetch candidates: %v", err)
+	}
+
+	// Convert domain candidates to protobuf format
+	pbCandidates := make([]*authpb.CandidateProfileResponse, 0, len(candidates))
+	for _, candidate := range candidates {
+		// Convert skills to proto format
+		skills := make([]*authpb.Skill, 0, len(candidate.Skills))
+		for _, skill := range candidate.Skills {
+			skills = append(skills, &authpb.Skill{
+				CandidateId: skill.CandidateID,
+				Skill:       skill.Skill,
+				Level:       skill.Level,
+			})
+		}
+
+		// Convert education to proto format
+		education := make([]*authpb.Education, 0, len(candidate.Education))
+		for _, edu := range candidate.Education {
+			education = append(education, &authpb.Education{
+				CandidateId: edu.CandidateID,
+				University:  edu.University,
+				Location:    edu.Location,
+				Major:       edu.Major,
+				StartDate:   edu.StartDate,
+				EndDate:     edu.EndDate,
+				Grade:       edu.Grade,
+			})
+		}
+
+		// Create the candidate profile response
+		pbCandidates = append(pbCandidates, &authpb.CandidateProfileResponse{
+			Id:                candidate.ID,
+			Email:             candidate.Email,
+			Name:              candidate.Name,
+			Phone:             candidate.Phone,
+			Experience:        candidate.Experience,
+			Skills:            skills,
+			Resume:            candidate.Resume,
+			Education:         education,
+			CurrentLocation:   candidate.CurrentLocation,
+			PreferredLocation: candidate.PreferredLocation,
+			Linkedin:          candidate.Linkedin,
+			Github:            candidate.Github,
+			ProfilePicture:    candidate.ProfilePicture,
+			IsVerified:        candidate.IsVerified,
+		})
+	}
+
+	// Calculate total pages
+	totalPages := (totalCount + int64(limit) - 1) / int64(limit)
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	// Create pagination response
+	paginationResponse := &authpb.PaginationResponse{
+		TotalCount: int32(totalCount),
+		Page:       page,
+		Limit:      limit,
+		TotalPages: int32(totalPages),
+	}
+
+	// Return the response
+	return &authpb.GetCandidatesResponse{
+		Candidates: pbCandidates,
+		Pagination: paginationResponse,
+	}, nil
+}
+
+// GetEmployersWithPagination implements the GetEmployersWithPagination gRPC method
+func (s *authGRPCServer) GetEmployersWithPagination(ctx context.Context, req *authpb.GetEmployersRequest) (*authpb.GetEmployersResponse, error) {
+	// Extract pagination parameters from the request
+	paginationReq := req.GetPagination()
+	page := int32(1)
+	limit := int32(10)
+
+	if paginationReq != nil {
+		page = paginationReq.GetPage()
+		limit = paginationReq.GetLimit()
+	}
+
+	// Create filters map from request parameters
+	filters := make(map[string]interface{})
+	if req.GetKeyword() != "" {
+		filters["keyword"] = req.GetKeyword()
+	}
+	if req.GetIndustry() != "" {
+		filters["industry"] = req.GetIndustry()
+	}
+	if req.GetLocation() != "" {
+		filters["location"] = req.GetLocation()
+	}
+
+	// Call the usecase to get paginated employers
+	employers, totalCount, err := s.employerUsecase.GetEmployersWithPagination(ctx, page, limit, filters)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "Failed to fetch employers: %v", err)
+	}
+
+	// Convert domain employers to protobuf format
+	pbEmployers := make([]*authpb.EmployerProfileResponse, 0, len(employers))
+	for _, employer := range employers {
+		pbEmployers = append(pbEmployers, &authpb.EmployerProfileResponse{
+			Id:          int64(employer.ID),
+			Email:       employer.Email,
+			CompanyName: employer.CompanyName,
+			Phone:       employer.Phone,
+			Industry:    employer.Industry,
+			Location:    employer.Location,
+			Website:     employer.Website,
+			IsVerified:  employer.IsVerified,
+			IsTrusted:   employer.IsTrusted,
+		})
+	}
+
+	// Calculate total pages
+	totalPages := (totalCount + int64(limit) - 1) / int64(limit)
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	// Create pagination response
+	paginationResponse := &authpb.PaginationResponse{
+		TotalCount: int32(totalCount),
+		Page:       page,
+		Limit:      limit,
+		TotalPages: int32(totalPages),
+	}
+
+	// Return the response
+	return &authpb.GetEmployersResponse{
+		Employers:  pbEmployers,
+		Pagination: paginationResponse,
 	}, nil
 }

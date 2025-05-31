@@ -18,5 +18,6 @@ type EmployerRepository interface {
 	VerifyPasswordResetOtp(email string, otp uint64) error
 	UpdatePassword(email string, newPassword string) error
 	UpdatePasswordByID(id string, newPassword string) error
-
+	// Pagination methods
+	GetEmployersWithPagination(page, limit int32, filters map[string]interface{}) ([]*model.Employer, int64, error)
 }

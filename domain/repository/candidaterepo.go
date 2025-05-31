@@ -27,4 +27,5 @@ type CandidateRepository interface {
 	UpdatePasswordByID(id string, newPassword string) error
 	AddResume(ctx context.Context, objectName string, file io.Reader) (string, error)
 	AddResumePath(ctx context.Context,  userID string, filepath string) error
+	GetCandidatesWithPagination(page, limit int32, filters map[string]interface{}) ([]*model.Candidate, int64, error)
 }

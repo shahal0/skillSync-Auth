@@ -3,7 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
-	"fmt"
+	//m
 	"io"
 	"log"
 	"math/rand"
@@ -129,7 +129,6 @@ func (c *candidatePG) AddSkills(skills model.Skills, candidateID string) error {
 	log.Printf("DEBUG: Creating new skill '%s' for candidate %s", skills.Skill, candidateID)
 	return c.db.Create(&skills).Error
 }
-
 
 func (c *candidatePG) GetCandidateByEmail(email string) (*model.Candidate, error) {
 	var emp model.Candidate
@@ -410,33 +409,91 @@ func (c *candidatePG) GoogleCallback(code string) (*model.LoginResponse, error) 
 }
 
 func (c *candidatePG) GetSkills(candidateID string) ([]string, error) {
-	log.Printf("DEBUG: Getting skills for candidate ID: %s", candidateID)
-
 	var skills []model.Skills
-	// Use Debug() to show the SQL query and add ORDER BY to ensure consistent results
-	if err := c.db.Debug().Table("candidate_skills").Where("candidate_id = ?", candidateID).Order("skill ASC").Find(&skills).Error; err != nil {
-		log.Printf("ERROR: Failed to get skills for candidate %s: %v", candidateID, err)
-		return nil, fmt.Errorf("failed to get skills: %w", err)
+
+	// Query the database for skills associated with the candidate
+	if err := c.db.Where("candidate_id = ?", candidateID).Find(&skills).Error; err != nil {
+		log.Printf("ERROR: Failed to retrieve skills for candidate %s: %v", candidateID, err)
+		return nil, err
 	}
-	log.Printf("DEBUG: Raw SQL results for candidate %s: %+v", candidateID, skills)
 
-	log.Printf("DEBUG: Found %d skills for candidate %s", len(skills), candidateID)
+	log.Printf("DEBUG: Retrieved %d skills for candidate %s", len(skills), candidateID)
 
-	// Extract just the skill names, normalizing them
-	skillNames := make([]string, 0, len(skills)) // Use 0 length but full capacity
+	// Extract the skill names
+	skillNames := make([]string, 0, len(skills))
 	for _, skill := range skills {
-		// Normalize the skill name
-		skillName := strings.TrimSpace(skill.Skill)
-		if skillName != "" { // Only include non-empty skills
-			// Add the skill name without proficiency level for matching
-			skillNames = append(skillNames, skillName)
-			log.Printf("DEBUG: Found skill: %s (Level: %s)", skillName, skill.Level)
+		if skill.Skill != "" {
+			skillNames = append(skillNames, skill.Skill)
 		}
 	}
-
 	if len(skillNames) == 0 {
 		log.Printf("WARNING: No valid skills found for candidate %s", candidateID)
 	}
 
 	return skillNames, nil
+}
+
+// GetCandidatesWithPagination retrieves candidates with pagination and filtering
+func (c *candidatePG) GetCandidatesWithPagination(page, limit int32, filters map[string]interface{}) ([]*model.Candidate, int64, error) {
+	var candidates []*model.Candidate
+	var totalCount int64
+
+	// Create a query builder
+	query := c.db.Model(&model.Candidate{})
+
+	// Apply filters if any
+	if filters != nil {
+		for key, value := range filters {
+			switch key {
+			case "skills":
+				if skills, ok := value.([]string); ok && len(skills) > 0 {
+					// Join with skills table and filter by skill names
+					query = query.Joins("JOIN skills ON skills.candidate_id = candidates.id")
+					query = query.Where("skills.skill IN (?)", skills)
+					query = query.Group("candidates.id")
+				}
+			case "experience":
+				if exp, ok := value.(int); ok {
+					query = query.Where("experience >= ?", exp)
+				}
+			case "location":
+				if loc, ok := value.(string); ok && loc != "" {
+					query = query.Where("current_location LIKE ? OR preferred_location LIKE ?", "%"+loc+"%", "%"+loc+"%")
+				}
+			default:
+				// For other fields, apply direct equality filter
+				query = query.Where(key+" = ?", value)
+			}
+		}
+	}
+
+	// Count total matching records (before pagination)
+	if err := query.Count(&totalCount).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// Apply pagination
+	offset := (page - 1) * limit
+	if err := query.Offset(int(offset)).Limit(int(limit)).Find(&candidates).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// For each candidate, fetch their skills and education
+	for _, candidate := range candidates {
+		// Fetch skills
+		var skills []model.Skills
+		if err := c.db.Where("candidate_id = ?", candidate.ID).Find(&skills).Error; err != nil {
+			log.Printf("Warning: Failed to fetch skills for candidate %s: %v", candidate.ID, err)
+		}
+		candidate.Skills = skills
+
+		// Fetch education
+		var education []model.Education
+		if err := c.db.Where("candidate_id = ?", candidate.ID).Find(&education).Error; err != nil {
+			log.Printf("Warning: Failed to fetch education for candidate %s: %v", candidate.ID, err)
+		}
+		candidate.Education = education
+	}
+
+	return candidates, totalCount, nil
 }
