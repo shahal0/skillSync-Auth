@@ -19,7 +19,7 @@ import (
 	models "skillsync-authservice/domain/models"
 	"skillsync-authservice/internal/usecase"
 
-	authpb "skillsync-authservice/skillsync-protos/gen/authpb"
+	authpb "github.com/shahal0/skillsync-protos/gen/authpb"
 )
 
 // --- gRPC Server Implementation ---

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -19,6 +20,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/shahal0/skillsync-protos/gen/authpb"
+	_ "net/http/pprof" // Import pprof for profiling
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
@@ -134,6 +136,14 @@ func main() {
 		grpcServer.GracefulStop()
 		log.Println("Server shutdown complete")
 		os.Exit(0)
+	}()
+
+	// Start pprof HTTP server for profiling
+	go func() {
+		log.Println("Starting pprof profiling server on port 6060")
+		if err := http.ListenAndServe("localhost:6060", nil); err != nil {
+			log.Printf("Pprof server failed: %v", err)
+		}
 	}()
 
 	// Start serving
